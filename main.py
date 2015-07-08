@@ -15,7 +15,7 @@ JINJA_ENVIRONMENT = jinja2.Environment(
 class Email(db.Model):
     to = db.StringProperty()
     subject = db.StringProperty()
-    content = db.StringProperty()
+    content = db.TextProperty()
 
 
 class MainPage(webapp2.RequestHandler):
@@ -34,7 +34,7 @@ class Createmail(webapp2.RequestHandler):
         self.response.headers[
             'Access-Control-Allow-Methods'] = 'POST, GET, PUT, DELETE'
 
-    def get(self):
+    def post(self):
         save = True
         msg_error = ""
         if len(self.request.get('subject')) > 0:
@@ -49,18 +49,21 @@ class Createmail(webapp2.RequestHandler):
             msg_error = "No se envio destinatario"
 
         if save is True:
-            email = Email(to=subject,
-                          subject=to)
+            email = Email(to=to,
+                          subject=subject)
             email.put()
             obj = {
                 'success': True,
                 'msg': '',
+                'pos': '',
                 'id': str(email.key()),
             }
         else:
             obj = {
                 'success': False,
+                'pos': '',
                 'msg': msg_error,
+                'id': '',
             }
         self.response.content_type = 'application/json'
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
@@ -76,22 +79,24 @@ class Chunkmail(webapp2.RequestHandler):
         self.response.headers[
             'Access-Control-Allow-Methods'] = 'POST, GET, PUT, DELETE'
 
-    def get(self):
+    def post(self):
         q = Email.all()
         try:
             q.filter(
                 "__key__ =", db.Key(self.request.get('i')))
             email = q.get()
             if email.content is None:
-                email.content = self.request.get('content')
+                email.content = self.request.get('content').rstrip()
             else:
-                email.content = email.content.join(self.request.get('content'))
+                email.content = email.content + \
+                    self.request.get('content').rstrip()
             email.put()
             obj = {
                 'success': True,
                 'msg': '',
                 'id': str(email.key()),
                 'to': email.to,
+                'pos': self.request.get('pos'),
                 'subject': email.subject,
                 'content': email.content,
             }
@@ -120,19 +125,43 @@ class SendChunkMail(webapp2.RequestHandler):
             q.filter(
                 "__key__ =", db.Key(self.request.get('i')))
             email = q.get()
-            obj = {
-                'success': True,
-                'msg': '',
-                'id': str(email.key()),
-                'to': email.to,
-                'subject': email.subject,
-                'content': email.content,
-            }
+            send = True
+            msg_error = ""
+            if len(email.subject) > 0:
+                message = mail.EmailMessage(sender="Pogona Test Emailing <a.vara.1986@gmail.com>",
+                                            subject=email.subject)
+            else:
+                send = False
+                msg_error = "No se envio asunto"
+            if send is True and len(email.to) > 0:
+                message.to = email.to
+            else:
+                send = False
+                msg_error = "No se envio destinatario"
+            if send is True and len(email.content) > 0:
+                message.html = email.content
+
+            else:
+                send = False
+                msg_error = "No se envio contenido"
+
+            if send is True:
+                message.send()
+                obj = {
+                    'success': True,
+                    'msg': 'Envio ok',
+                }
+            else:
+                obj = {
+                    'success': False,
+                    'msg': msg_error,
+                }
         except db.datastore_errors.BadKeyError:
             obj = {
                 'success': False,
                 'msg': "no existe",
             }
+
         self.response.content_type = 'application/json'
         self.response.headers.add_header('Access-Control-Allow-Origin', '*')
         self.response.write(json.encode(obj))
